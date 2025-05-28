@@ -87,6 +87,7 @@ def train_custom_model(L_arrays, ab_arrays, output_dir="./checkpoints",
     )
     
     # Train model
+    print(f"start training")
     trainer.fit(model, train_dl, val_dl)
     
     return model, trainer
