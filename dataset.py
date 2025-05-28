@@ -206,7 +206,6 @@ def make_custom_dataloaders(L_arrays, ab_arrays, config, train_split=0.9, num_wo
         [ab_arrays[i] for i in train_indices],
         split='train',
         config=config,
-        device=device
     )
     
     val_dataset = CustomColorizationDataset(
@@ -214,7 +213,6 @@ def make_custom_dataloaders(L_arrays, ab_arrays, config, train_split=0.9, num_wo
         [ab_arrays[i] for i in val_indices],
         split='val',
         config=config,
-        device=device
     )
     
     # Create dataloaders
