@@ -3,7 +3,6 @@ from tqdm import tqdm
 from diffusion import GaussianDiffusion
 from utils import lab_to_pil, lab_to_rgb, show_lab_image, split_lab_channels
 import torchvision
-import wandb
 import pytorch_lightning as pl
 from matplotlib import pyplot as plt
 from torch_ema import ExponentialMovingAverage

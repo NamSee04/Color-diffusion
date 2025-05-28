@@ -29,6 +29,57 @@ def is_greyscale(im):
     return True
 
 
+class CustomColorizationDataset(Dataset):
+    def __init__(self, L_arrays, ab_arrays, split='train', config=None):
+        """
+        Args:
+            L_arrays: List of numpy arrays of shape (224, 224) containing L channel
+            ab_arrays: List of numpy arrays of shape (224, 224, 2) containing ab channels
+            split: 'train' or 'val'
+            config: Configuration dictionary
+        """
+        self.L_arrays = L_arrays
+        self.ab_arrays = ab_arrays
+        self.config = config
+        self.split = split
+        
+        # Verify input shapes
+        for L, ab in zip(L_arrays, ab_arrays):
+            assert L.shape == (224, 224), f"L channel shape should be (224, 224), got {L.shape}"
+            assert ab.shape == (224, 224, 2), f"ab channels shape should be (224, 224, 2), got {ab.shape}"
+        
+        # Normalization factors
+        self.L_norm = 50.0  # L channel normalization
+        self.ab_norm = 110.0  # ab channels normalization
+
+    def normalize_lab(self, L, ab):
+        """Normalize L and ab channels to [-1, 1] range"""
+        L = torch.from_numpy(L).float() / self.L_norm - 1.0  # L: [-1, 1]
+        ab = torch.from_numpy(ab).float() / self.ab_norm     # ab: [-1, 1]
+        return L, ab
+
+    def __getitem__(self, idx):
+        L = self.L_arrays[idx]
+        ab = self.ab_arrays[idx]
+        
+        # Normalize channels
+        L, ab = self.normalize_lab(L, ab)
+        
+        # Add channel dimension to L
+        L = L.unsqueeze(0)  # Shape: (1, 224, 224)
+        
+        # Permute ab to channel first format
+        ab = ab.permute(2, 0, 1)  # Shape: (2, 224, 224)
+        
+        # Combine L and ab channels
+        lab = torch.cat([L, ab], dim=0)  # Shape: (3, 224, 224)
+        
+        return lab
+
+    def __len__(self):
+        return len(self.L_arrays)
+
+
 class ColorizationDataset(Dataset):
     def __init__(self, paths, split='train', config=None):
         size = config["img_size"]
@@ -118,6 +169,69 @@ def make_dataloaders(path, config, num_workers=2, shuffle=True, limit=None):
                         pin_memory=config["pin_memory"],
                         persistent_workers=True,
                         shuffle=shuffle)
+    return train_dl, val_dl
+
+
+def make_custom_dataloaders(L_arrays, ab_arrays, config, train_split=0.9, num_workers=2, batch_size=None):
+    """
+    Create dataloaders for custom L and ab arrays
+    
+    Args:
+        L_arrays: List of numpy arrays of shape (224, 224)
+        ab_arrays: List of numpy arrays of shape (224, 224, 2)
+        config: Configuration dictionary
+        train_split: Fraction of data to use for training
+        num_workers: Number of workers for dataloader
+        batch_size: Batch size (uses config if None)
+    """
+    # Split data into train and validation
+    n_samples = len(L_arrays)
+    indices = list(range(n_samples))
+    random.shuffle(indices)
+    split_idx = int(n_samples * train_split)
+    
+    train_indices = indices[:split_idx]
+    val_indices = indices[split_idx:]
+    
+    # Create datasets
+    train_dataset = CustomColorizationDataset(
+        [L_arrays[i] for i in train_indices],
+        [ab_arrays[i] for i in train_indices],
+        split='train',
+        config=config
+    )
+    
+    val_dataset = CustomColorizationDataset(
+        [L_arrays[i] for i in val_indices],
+        [ab_arrays[i] for i in val_indices],
+        split='val',
+        config=config
+    )
+    
+    # Create dataloaders
+    batch_size = batch_size or config.get("batch_size", 36)
+    
+    train_dl = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=config.get("pin_memory", True),
+        persistent_workers=True,
+        shuffle=True
+    )
+    
+    val_dl = DataLoader(
+        val_dataset,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=config.get("pin_memory", True),
+        persistent_workers=True,
+        shuffle=False
+    )
+    
+    print(f"Train size: {len(train_indices)}")
+    print(f"Val size: {len(val_indices)}")
+    
     return train_dl, val_dl
 
 
