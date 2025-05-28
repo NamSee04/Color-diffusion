@@ -87,6 +87,9 @@ def train_custom_model(L_arrays, ab_arrays, output_dir="./checkpoints",
     )
     
     # Train model
+    print(f"max epochs: {colordiff_config['epochs']}")
+    print(f"batch size: {colordiff_config['batch_size']}")
+    print(f"device: {colordiff_config['device']}")
     print(f"start training")
     trainer.fit(model, train_dl, val_dl)
     
