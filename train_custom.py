@@ -112,7 +112,7 @@ def train_custom_model(L_arrays, ab_arrays, output_dir="./checkpoints",
         max_epochs=colordiff_config["epochs"],
         accelerator=colordiff_config["device"],
         num_sanity_val_steps=1,
-        devices="auto",
+        devices=1,
         log_every_n_steps=1,
         callbacks=[
             CustomProgressCallback(),
