@@ -1,4 +1,4 @@
-device: gpu
+device: cuda
 pin_memory: true
 T: 350
 lr: 1.0e-06
