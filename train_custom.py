@@ -110,7 +110,7 @@ def train_custom_model(L_arrays, ab_arrays, output_dir="./checkpoints",
     # Setup trainer with custom progress callback
     trainer = pl.Trainer(
         max_epochs=colordiff_config["epochs"],
-        accelerator=colordiff_config["device"],
+        accelerator="gpu",
         num_sanity_val_steps=1,
         devices=1,
         log_every_n_steps=1,

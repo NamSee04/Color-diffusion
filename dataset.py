@@ -37,11 +37,13 @@ class CustomColorizationDataset(Dataset):
             ab_arrays: List of numpy arrays of shape (224, 224, 2) containing ab channels
             split: 'train' or 'val'
             config: Configuration dictionary
+            device: 'cpu' or 'cuda' for GPU support
         """
         self.L_arrays = L_arrays
         self.ab_arrays = ab_arrays
         self.config = config
         self.split = split
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
         # Verify input shapes
         for L, ab in zip(L_arrays, ab_arrays):
@@ -53,10 +55,10 @@ class CustomColorizationDataset(Dataset):
         self.ab_norm = 110.0  # ab channels normalization
 
     def normalize_lab(self, L, ab):
-        """Normalize L and ab channels to [-1, 1] range"""
+        """Normalize L and ab channels to [-1, 1] range and move to device"""
         L = torch.from_numpy(L).float() / self.L_norm - 1.0  # L: [-1, 1]
         ab = torch.from_numpy(ab).float() / self.ab_norm     # ab: [-1, 1]
-        return L, ab
+        return L.to(self.device), ab.to(self.device)
 
     def __getitem__(self, idx):
         L = self.L_arrays[idx]
@@ -84,6 +86,7 @@ class ColorizationDataset(Dataset):
     def __init__(self, paths, split='train', config=None):
         size = config["img_size"]
         self.resize = transforms.Resize((size, size), Image.BICUBIC)
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if split == 'train':
             self.transforms = transforms.Compose([
                 transforms.RandomHorizontalFlip(),
@@ -99,12 +102,11 @@ class ColorizationDataset(Dataset):
 
     def tensor_to_lab(self, base_img_tens):
         base_img = np.array(base_img_tens)
-        img_lab = rgb2lab(base_img).astype(
-            "float32")  # Converting RGB to L*a*b
+        img_lab = rgb2lab(base_img).astype("float32")  # Converting RGB to L*a*b
         img_lab = transforms.ToTensor()(img_lab)
         L = img_lab[[0], ...] / 50. - 1.  # Between -1 and 1
         ab = img_lab[[1, 2], ...] / 110.  # Between -1 and 1
-        return torch.cat((L, ab), dim=0)
+        return torch.cat((L, ab), dim=0).to(self.device)
 
     def get_lab_from_path(self, path):
         img = Image.open(path).convert("RGB")
@@ -140,6 +142,7 @@ class PickleColorizationDataset(ColorizationDataset):
         return (torch.load(self.paths[idx]))
 
 def make_datasets(path, config, limit=None):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     img_paths = glob.glob(path + "/*")
     if limit:
         img_paths = random.sample(img_paths, limit)
@@ -148,25 +151,27 @@ def make_datasets(path, config, limit=None):
     val_split = img_paths[int(n_imgs * .9):]
 
     train_dataset = ColorizationDataset(
-        train_split, split="train", config=config)
-    val_dataset = ColorizationDataset(val_split, split="val", config=config)
+        train_split, split="train", config=config, device=device)
+    val_dataset = ColorizationDataset(val_split, split="val", config=config, device=device)
     print(f"Train size: {len(train_split)}")
     print(f"Val size: {len(val_split)}")
+    print(f"Using device: {device}")
     return train_dataset, val_dataset
 
 
 def make_dataloaders(path, config, num_workers=2, shuffle=True, limit=None):
-    train_dataset, val_dataset = make_datasets(path, config, limit=limit)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    train_dataset, val_dataset = make_datasets(path, config, limit=limit, device=device)
     train_dl = DataLoader(train_dataset,
                           batch_size=config["batch_size"],
                           num_workers=num_workers,
-                          pin_memory=config["pin_memory"],
+                          pin_memory=True if device == 'cuda' else config.get("pin_memory", True),
                           persistent_workers=True,
                           shuffle=shuffle)
     val_dl = DataLoader(val_dataset,
                         batch_size=config["batch_size"],
                         num_workers=num_workers,
-                        pin_memory=config["pin_memory"],
+                        pin_memory=True if device == 'cuda' else config.get("pin_memory", True),
                         persistent_workers=True,
                         shuffle=shuffle)
     return train_dl, val_dl
@@ -183,8 +188,10 @@ def make_custom_dataloaders(L_arrays, ab_arrays, config, train_split=0.9, num_wo
         train_split: Fraction of data to use for training
         num_workers: Number of workers for dataloader
         batch_size: Batch size (uses config if None)
+        device: 'cpu' or 'cuda' for GPU support
     """
     # Split data into train and validation
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     n_samples = len(L_arrays)
     indices = list(range(n_samples))
     random.shuffle(indices)
@@ -198,14 +205,16 @@ def make_custom_dataloaders(L_arrays, ab_arrays, config, train_split=0.9, num_wo
         [L_arrays[i] for i in train_indices],
         [ab_arrays[i] for i in train_indices],
         split='train',
-        config=config
+        config=config,
+        device=device
     )
     
     val_dataset = CustomColorizationDataset(
         [L_arrays[i] for i in val_indices],
         [ab_arrays[i] for i in val_indices],
         split='val',
-        config=config
+        config=config,
+        device=device
     )
     
     # Create dataloaders
@@ -215,7 +224,7 @@ def make_custom_dataloaders(L_arrays, ab_arrays, config, train_split=0.9, num_wo
         train_dataset,
         batch_size=batch_size,
         num_workers=num_workers,
-        pin_memory=config.get("pin_memory", True),
+        pin_memory=True if device == 'cuda' else config.get("pin_memory", True),
         persistent_workers=True,
         shuffle=True
     )
@@ -224,13 +233,14 @@ def make_custom_dataloaders(L_arrays, ab_arrays, config, train_split=0.9, num_wo
         val_dataset,
         batch_size=batch_size,
         num_workers=num_workers,
-        pin_memory=config.get("pin_memory", True),
+        pin_memory=True if device == 'cuda' else config.get("pin_memory", True),
         persistent_workers=True,
         shuffle=False
     )
     
     print(f"Train size: {len(train_indices)}")
     print(f"Val size: {len(val_indices)}")
+    print(f"Using device: {device}")
     
     return train_dl, val_dl
 
