@@ -19,7 +19,7 @@ def is_greyscale(im):
     if isinstance(im, str):
         im = Image.open(im).convert("RGB")
     if im.mode not in ("L", "RGB"):
-        raise ValueError("Unsuported image mode")
+        raise ValueError("Unsupported image mode")
     if im.mode == "RGB":
         rgb = im.split()
         if ImageChops.difference(rgb[0], rgb[1]).getextrema()[1] != 0:
@@ -139,10 +139,13 @@ class ColorizationDataset(Dataset):
 
 class PickleColorizationDataset(ColorizationDataset):
     def __getitem__(self, idx):
-        return (torch.load(self.paths[idx]))
+        try:
+            return torch.load(self.paths[idx])
+        except Exception as e:
+            print(f"Error loading file {self.paths[idx]}: {str(e)}")
+            raise
 
 def make_datasets(path, config, limit=None):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     img_paths = glob.glob(path + "/*")
     if limit:
         img_paths = random.sample(img_paths, limit)
@@ -151,17 +154,17 @@ def make_datasets(path, config, limit=None):
     val_split = img_paths[int(n_imgs * .9):]
 
     train_dataset = ColorizationDataset(
-        train_split, split="train", config=config, device=device)
-    val_dataset = ColorizationDataset(val_split, split="val", config=config, device=device)
+        train_split, split="train", config=config)
+    val_dataset = ColorizationDataset(val_split, split="val", config=config)
     print(f"Train size: {len(train_split)}")
     print(f"Val size: {len(val_split)}")
-    print(f"Using device: {device}")
+    print(f"Using device: {torch.device('cuda' if torch.cuda.is_available() else 'cpu')}")
     return train_dataset, val_dataset
 
 
 def make_dataloaders(path, config, num_workers=2, shuffle=True, limit=None):
+    train_dataset, val_dataset = make_datasets(path, config, limit=limit)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    train_dataset, val_dataset = make_datasets(path, config, limit=limit, device=device)
     train_dl = DataLoader(train_dataset,
                           batch_size=config["batch_size"],
                           num_workers=num_workers,
