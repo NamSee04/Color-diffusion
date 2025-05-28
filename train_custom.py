@@ -5,8 +5,41 @@ from dataset import make_custom_dataloaders
 from model import ColorDiffusion
 from utils import get_device, load_default_configs
 from denoising import Unet, Encoder
-from pytorch_lightning.callbacks import ModelCheckpoint
+from pytorch_lightning.callbacks import ModelCheckpoint, Callback, TQDMProgressBar
 import os
+import time
+from tqdm.auto import tqdm
+
+class CustomProgressCallback(Callback):
+    def on_train_epoch_start(self, trainer, pl_module):
+        self.epoch_start_time = time.time()
+        self.current_epoch = trainer.current_epoch
+        self.total_epochs = trainer.max_epochs
+        print(f"\nEpoch {self.current_epoch + 1}/{self.total_epochs}")
+        
+    def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
+        # Calculate progress
+        progress = (batch_idx + 1) / len(trainer.train_dataloader)
+        elapsed_time = time.time() - self.epoch_start_time
+        estimated_total = elapsed_time / progress if progress > 0 else 0
+        remaining_time = estimated_total - elapsed_time
+        
+        # Create progress bar
+        bar_length = 30
+        filled_length = int(bar_length * progress)
+        bar = '█' * filled_length + '░' * (bar_length - filled_length)
+        
+        # Print progress
+        print(f'\rProgress: [{bar}] {progress:.1%} | '
+              f'Time: {elapsed_time:.0f}s | '
+              f'ETA: {remaining_time:.0f}s | '
+              f'Loss: {trainer.callback_metrics.get("train_loss", 0):.4f}', 
+              end='')
+        
+    def on_train_epoch_end(self, trainer, pl_module):
+        epoch_time = time.time() - self.epoch_start_time
+        print(f"\nEpoch {self.current_epoch + 1} completed in {epoch_time:.2f} seconds")
+        print(f"Average time per batch: {epoch_time/len(trainer.train_dataloader):.2f} seconds")
 
 def train_custom_model(L_arrays, ab_arrays, output_dir="./checkpoints", 
                       resume_ckpt=None, num_workers=2, log=False):
@@ -74,23 +107,31 @@ def train_custom_model(L_arrays, ab_arrays, output_dir="./checkpoints",
         monitor="val_loss"
     )
     
-    # Setup trainer
+    # Setup trainer with custom progress callback
     trainer = pl.Trainer(
         max_epochs=colordiff_config["epochs"],
         accelerator=colordiff_config["device"],
         num_sanity_val_steps=1,
         devices="auto",
         log_every_n_steps=1,
-        callbacks=[ckpt_callback],
+        callbacks=[
+            CustomProgressCallback(),
+            ckpt_callback
+        ],
         profiler="simple" if log else None,
         accumulate_grad_batches=colordiff_config["accumulate_grad_batches"],
+        enable_progress_bar=False  # Disable default progress bar
     )
     
+    # Print training configuration
+    print("\nTraining Configuration:")
+    print(f"Max epochs: {colordiff_config['epochs']}")
+    print(f"Batch size: {colordiff_config['batch_size']}")
+    print(f"Device: {colordiff_config['device']}")
+    print(f"Total batches per epoch: {len(train_dl)}")
+    print("\nStarting training...")
+    
     # Train model
-    print(f"max epochs: {colordiff_config['epochs']}")
-    print(f"batch size: {colordiff_config['batch_size']}")
-    print(f"device: {colordiff_config['device']}")
-    print(f"start training")
     trainer.fit(model, train_dl, val_dl)
     
     return model, trainer
