@@ -23,15 +23,15 @@ def get_index_from_list(vals, t, x_shape):
 class GaussianDiffusion(LightningModule):
     def __init__(self, T, dynamic_threshold=False) -> None:
         super().__init__()
-        self.betas = linear_beta_schedule(timesteps=T).to(self.device)
-        self.alphas = 1. - self.betas
-        self.alphas_cumprod = torch.cumprod(self.alphas, axis=0)
-        self.alphas_cumprod_prev = F.pad(self.alphas_cumprod[:-1], (1, 0), value=1.0)
-        self.sqrt_recip_alphas = torch.sqrt(1.0 / self.alphas)
-        self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
-        self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1. - self.alphas_cumprod)
-        self.posterior_variance = self.betas * (1. - self.alphas_cumprod_prev) / (1. - self.alphas_cumprod)
-        self.dynamic_threshold=dynamic_threshold
+        self.register_buffer('betas', linear_beta_schedule(timesteps=T))
+        self.register_buffer('alphas', 1. - self.betas)
+        self.register_buffer('alphas_cumprod', torch.cumprod(self.alphas, axis=0))
+        self.register_buffer('alphas_cumprod_prev', F.pad(self.alphas_cumprod[:-1], (1, 0), value=1.0))
+        self.register_buffer('sqrt_recip_alphas', torch.sqrt(1.0 / self.alphas))
+        self.register_buffer('sqrt_alphas_cumprod', torch.sqrt(self.alphas_cumprod))
+        self.register_buffer('sqrt_one_minus_alphas_cumprod', torch.sqrt(1. - self.alphas_cumprod))
+        self.register_buffer('posterior_variance', self.betas * (1. - self.alphas_cumprod_prev) / (1. - self.alphas_cumprod))
+        self.dynamic_threshold = dynamic_threshold
     def forward_diff(self, x_0, t, T=300):
         """ 
         Takes an image and a timestep as input and noises the color channels to timestep t
